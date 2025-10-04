@@ -15,7 +15,8 @@ services:
       - EMAIL_PASS=${EMAIL_PASS}
       - OPENAQ_API=${OPENAQ_API}
       - NASA_API_KEY=${NASA_API_KEY}
-      - NASA_TEMPO_API=${NASA_TEMPO_API}
+      - OPENWEATHER_API_KEY={$OPENWEATHER_API_KEY}
+      - OPENWEATHER_API_URL={$OPENWEATHER_API_URL}
     depends_on:
       - db
     volumes:
