@@ -8,6 +8,10 @@ from .mail_utils import enviar_alerta_email
 import requests
 import os
 from dotenv import load_dotenv
+from ml.predict import prever_proximos_15_dias
+import pandas as pd
+from datetime import datetime
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
@@ -18,6 +22,16 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Air Quality App - Parte 1")
 
+@app.get("/")
+def root():
+    return JSONResponse(content={
+        "mensagem": "🌍 API NASA Air Quality ativa e pronta para previsões 🚀",
+        "endpoints": {
+            "documentação": "/docs",
+            "previsão_15_dias": "/prever_aqi_15_dias"
+        }
+    })
+
 # APIs
 OPENAQ_API = os.getenv("OPENAQ_API")
 NASA_TEMPO_API = os.getenv("NASA_TEMPO_API")
@@ -26,34 +40,26 @@ NASA_API_KEY = os.getenv("NASA_API_KEY")
 # ----------------------------
 # Funções auxiliares
 # ----------------------------
-
 def obter_dados_meteorologia(cidade: str):
-    """
-    Busca dados meteorológicos em tempo real via NASA TEMPO.
-    """
     try:
-        params = {
-            "city": cidade,
-            "api_key": NASA_API_KEY
+        headers = {
+            "Authorization": f"Bearer {NASA_API_KEY}"  # token do .env
         }
-        resp = requests.get(NASA_TEMPO_API, params=params, timeout=10)
+        params = {
+            "city": cidade
+        }
+        resp = requests.get("https://api.nasa.gov/tempo", headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        # Ajuste de acordo com o formato real do JSON da NASA TEMPO
-        vento = data.get("wind_speed", 0)
-        umidade = data.get("humidity", 50)
-        temperatura = data.get("temperature", 25)
-
         return {
-            "vento": vento,
-            "umidade": umidade,
-            "temperatura": temperatura
+            "vento": data.get("wind_speed", 0),
+            "umidade": data.get("humidity", 50),
+            "temperatura": data.get("temperature", 25)
         }
 
     except Exception as e:
         print(f"Erro NASA TEMPO: {e}")
-        # fallback para valores padrão se API falhar
         return {
             "vento": 4.5,
             "umidade": 65,
@@ -71,6 +77,33 @@ def criar_usuario_endpoint(usuario: UsuarioCreate, db: Session = Depends(get_db)
 @app.post("/perfil", summary="Criar perfil de saúde")
 def criar_perfil_endpoint(perfil: PerfilSaudeCreate, db: Session = Depends(get_db)):
     return criar_perfil_saude(db, perfil)
+
+@app.get("/aqi/previsao/{usuario_id}", summary="Previsão de AQI personalizado para 15 dias")
+def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
+    # 1. Busca perfil do usuário
+    perfil = obter_perfil_usuario(db, usuario_id)
+    if not perfil:
+        raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado")
+    
+    df_ultimo_dia = pd.DataFrame([{
+        "data": pd.Timestamp.today(),
+        "T2M": 25,  # temperatura média
+        "WS10M": 5, # vento médio
+        "ALLSKY_SFC_SW_DWN": 200, # radiação média
+        "possui_asma": int(perfil.possui_asma),
+        "fumante": int(perfil.fumante),
+        "sensibilidade_alta": int(perfil.sensibilidade_alta)
+    }])
+    
+    if "dia_ano" not in df_ultimo_dia.columns:
+        df_ultimo_dia["dia_ano"] = datetime.now().timetuple().tm_yday
+    if "mes" not in df_ultimo_dia.columns: 
+        df_ultimo_dia["mes"] = datetime.now().month
+
+    # 3. Chama a função de previsão do ML
+    previsoes = prever_proximos_15_dias(df_ultimo_dia)
+
+    return {"usuario": perfil.usuario.nome, "previsoes": previsoes}
 
 # ----------------------------
 # Endpoint AQI personalizado

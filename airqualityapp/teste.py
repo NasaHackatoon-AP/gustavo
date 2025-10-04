@@ -1,54 +1,50 @@
-# test_api.py
-from sqlalchemy.orm import Session
-from airqualityapp.models import Usuario, AQIPersonalizadoHistorico
-from airqualityapp.database import SessionLocal, engine
+import requests
+from datetime import datetime, timedelta
+import os
 
-# Cria as tabelas se não existirem (opcional)
-# Base.metadata.create_all(bind=engine)
+# ================================
+# CONFIGURAÇÃO
+# ================================
+EARTHDATA_TOKEN = os.getenv("NASA_TEMPO_API")  # seu token no .env
+LATITUDE = -23.55
+LONGITUDE = -46.63
+PARAMETERS = "T2M,WS10M"  # Temperatura e Velocidade do vento
+FORMAT = "JSON"
 
-def main():
-    # Cria uma sessão do banco
-    db: Session = SessionLocal()
-    
-    try:
-        # 1️⃣ Criar um usuário de teste
-        usuario = Usuario(
-            nome="Gustavo Teste",
-            email="gustavo_teste@example.com",
-            senha_hash="123456",
-            data_nascimento="1990-01-01",
-            cidade="Cidade Teste",
-            estado="Estado Teste"
-        )
-        db.add(usuario)
-        db.commit()
-        db.refresh(usuario)
-        print(f"✅ Usuário criado: id={usuario.id}, nome={usuario.nome}")
+# Ajusta datas: últimos 7 dias
+END_DATE = datetime.today()
+START_DATE = END_DATE - timedelta(days=6)
+start_str = START_DATE.strftime("%Y%m%d")
+end_str = END_DATE.strftime("%Y%m%d")
 
-        # 2️⃣ Criar um registro de AQI personalizado
-        aqi = AQIPersonalizadoHistorico(
-            usuario_id=usuario.id,
-            aqi_original=50,
-            aqi_personalizado=45,
-            nivel_alerta="Moderado"
-        )
-        db.add(aqi)
-        db.commit()
-        db.refresh(aqi)
-        print(f"✅ AQI criado: id={aqi.id}, usuario_id={aqi.usuario_id}, nivel_alerta={aqi.nivel_alerta}")
+# Monta URL da API
+url = (
+    f"https://power.larc.nasa.gov/api/temporal/daily/point"
+    f"?start={start_str}&end={end_str}"
+    f"&latitude={LATITUDE}&longitude={LONGITUDE}"
+    f"&parameters={PARAMETERS}&format={FORMAT}"
+)
 
-        # 3️⃣ Listar todos os registros de AQI no banco
-        registros = db.query(AQIPersonalizadoHistorico).all()
-        print("\n📋 Lista de registros de AQI:")
-        for r in registros:
-            print(f"id={r.id}, usuario_id={r.usuario_id}, aqi_original={r.aqi_original}, aqi_personalizado={r.aqi_personalizado}, nivel_alerta={r.nivel_alerta}")
+# ================================
+# REQUISIÇÃO COM TOKEN
+# ================================
+headers = {
+    "Authorization": f"Bearer {EARTHDATA_TOKEN}"
+}
 
-    except Exception as e:
-        print("❌ Ocorreu um erro:", e)
-        db.rollback()
-    finally:
-        db.close()
+try:
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()  # levanta erro se não for 200
+    data = response.json()
+    print("✅ Conexão OK! Status:", response.status_code)
+    print("Conteúdo do dataset (resumido):")
+    # Mostra apenas os primeiros dias para não poluir a tela
+    for dia, valores in list(data['properties']['parameter']['T2M'].items())[0:5]:
+        temp = valores
+        vento = data['properties']['parameter']['WS10M'][dia]
+        print(f"{dia} -> Temperatura: {temp}°C, Vento: {vento} m/s")
 
-
-if __name__ == "__main__":
-    main()
+except requests.exceptions.HTTPError as e:
+    print(f"Erro HTTP: {e}")
+except Exception as e:
+    print(f"Erro geral: {e}")
