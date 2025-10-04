@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from .models import Usuario, PerfilSaude, AQIPersonalizadoHistorico, AlertasEnviados
 from .utils import hash_senha
+from sqlalchemy.orm import joinedload
 
 def criar_usuario(db: Session, usuario):
     db_usuario = Usuario(
@@ -24,7 +25,10 @@ def criar_perfil_saude(db: Session, perfil):
     return db_perfil
 
 def obter_perfil_usuario(db: Session, usuario_id: int):
-    return db.query(PerfilSaude).filter(PerfilSaude.usuario_id == usuario_id).first()
+    return db.query(PerfilSaude)\
+             .options(joinedload(PerfilSaude.usuario))\
+             .filter(PerfilSaude.usuario_id == usuario_id)\
+             .first()
 
 def salvar_historico(db: Session, usuario_id: int, aqi_original: int, aqi_personalizado: int, nivel_alerta: str):
     registro = AQIPersonalizadoHistorico(

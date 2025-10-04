@@ -90,20 +90,11 @@ def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
         resp = requests.get(f"{OPENAQ_API}?city={cidade}&limit=1")
         dados = resp.json()
         aqi_original = int(dados['results'][0]['measurements'][0]['value'])
-    except:
+    except Exception:
         aqi_original = 50  # valor default se API falhar
 
-    # Monta dicionário do perfil
-    perfil_dict = {
-        "possui_asma": perfil.possui_asma,
-        "possui_dpoc": perfil.possui_dpoc,
-        "possui_alergias": perfil.possui_alergias,
-        "fumante": perfil.fumante,
-        "sensibilidade_alta": perfil.sensibilidade_alta
-    }
-
-    # Calcula AQI personalizado baseado em saúde
-    aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil_dict)
+    # Calcula AQI personalizado baseado em saúde (passando o objeto PerfilSaude)
+    aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil)
 
     # Ajusta AQI com meteorologia real
     meteorologia = obter_dados_meteorologia(cidade)
