@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .database import get_db, Base, engine
 from .schemas import UsuarioCreate, PerfilSaudeCreate, AQIResponse
@@ -25,7 +25,7 @@ print("Aplicativo iniciado!")
 # Criação das tabelas (executa apenas uma vez)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Air Quality App - Parte 1")
+app = APIRouter()
 
 @app.get("/")
 def root():

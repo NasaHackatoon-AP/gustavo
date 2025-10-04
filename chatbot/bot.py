@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import pandas as pd
@@ -7,7 +7,7 @@ import random
 from ml.predict import prever_proximos_15_dias
 from chatbot.context import ConversaContexto
 
-app = FastAPI()
+app = APIRouter()
 
 # Modelo da requisição
 class Mensagem(BaseModel):

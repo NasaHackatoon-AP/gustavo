@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from airqualityapp.database import get_db
 from airqualityapp.crud import salvar_historico, obter_perfil_usuario
@@ -6,7 +6,7 @@ from airqualityapp.utils import calcular_indice_personalizado
 from .monitor import obter_aqi_nasa_tempo_geo
 from .notifications import enviar_alerta_push
 
-app = FastAPI(title="Air Monitor App – Geolocalização")
+app = APIRouter()
 
 @app.get("/monitor/aqi")
 def monitor_aqi_live(
