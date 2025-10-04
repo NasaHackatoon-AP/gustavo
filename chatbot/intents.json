@@ -1,0 +1,12 @@
+{
+    "intents": [
+        {
+            "keywords": ["oi", "olá", "hello"],
+            "response": "Olá! Eu sou o assistente do site. Posso ajudar você com a previsão de AQI ou clima."
+        },
+        {
+            "keywords": ["previsão", "aqi", "qualidade do ar"],
+            "response": "Você pode ver a previsão de AQI para os próximos 15 dias usando a funcionalidade de previsão no site."
+        }
+    ]
+}

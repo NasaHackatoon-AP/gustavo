@@ -12,6 +12,11 @@ from ml.predict import prever_proximos_15_dias
 import pandas as pd
 from datetime import datetime
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from chatbot.bot import responder, contexto
+import random
+import json
+from chatbot.context import ConversaContexto
 
 load_dotenv()
 
@@ -37,9 +42,46 @@ OPENAQ_API = os.getenv("OPENAQ_API")
 NASA_TEMPO_API = os.getenv("NASA_TEMPO_API")
 NASA_API_KEY = os.getenv("NASA_API_KEY")
 
+# Modelo da requisição
+class Mensagem(BaseModel):
+    texto: str
+
+# Carregar intents
+with open("chatbot/intents.json", "r", encoding="utf-8") as f:
+    INTENTS = json.load(f)
+
+# Contexto global
+contexto = ConversaContexto()
+
+# Função para gerar df_ultimo_dia simulado por cidade
+def gerar_df_cidade(cidade: str):
+    hoje = pd.Timestamp.now()
+    return pd.DataFrame([{
+        "data": hoje,
+        "T2M": random.uniform(15, 35),                 # temperatura
+        "WS10M": random.uniform(0, 10),               # velocidade do vento
+        "ALLSKY_SFC_SW_DWN": random.uniform(100, 300), # radiação solar
+        "dia_ano": hoje.timetuple().tm_yday,
+        "mes": hoje.month,
+        "possui_asma": random.randint(0,1),
+        "fumante": random.randint(0,1),
+        "sensibilidade_alta": random.randint(0,1),
+        "cidade": cidade
+    }])
+
+@app.post("/chatbot/")
+def chat(mensagem: Mensagem):
+    resposta = responder(mensagem.texto)
+    return {
+        "resposta": resposta,
+        "local_atual": contexto.obter_local(),
+        "historico": contexto.historico[-5:]  # últimos 5 registros
+    }
+    
 # ----------------------------
 # Funções auxiliares
 # ----------------------------
+
 def obter_dados_meteorologia(cidade: str):
     try:
         headers = {
