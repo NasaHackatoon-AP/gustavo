@@ -64,7 +64,7 @@ class PrevisaoAQIResponse(BaseModel):
     previsoes: List[PrevisaoDia]
 
 # Carregar intents
-intents_path = os.path.join(os.path.dirname(_file_), "..", "chatbot", "intents.json")
+intents_path = os.path.join(os.path.dirname(__file__), "..", "chatbot", "intents.json")
 try:
     with open(intents_path, "r", encoding="utf-8") as f:
         INTENTS = json.load(f)
