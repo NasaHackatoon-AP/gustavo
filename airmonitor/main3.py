@@ -14,12 +14,10 @@ from .notifications import enviar_alerta_push
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = APIRouter()
+logger = logging.getLogger(_name_)
 
 # Variável de API
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "d7850b94e00a68bac75067fb77e0b177")
 
 # --- Modelos Pydantic para resposta ---
 class Clima(BaseModel):
@@ -28,6 +26,8 @@ class Clima(BaseModel):
     umidade: Optional[int]
     vento: Optional[float]
     descricao: Optional[str]
+    chuva_mm: Optional[float]
+    neve_mm: Optional[float]
 
 class AqiResponse(BaseModel):
     latitude: float
@@ -38,9 +38,8 @@ class AqiResponse(BaseModel):
     usuario_id: Optional[int]
     clima: Optional[Clima]
 
-
-# --- Função para buscar dados da OpenWeather ---
-def obter_dados_openweather(lat: float, lon: float):
+# --- Função para buscar dados da OpenWeather (incluindo chuva/neve) ---
+def obter_dados_openweather(lat: float, lon: float) -> Optional[dict]:
     if not OPENWEATHER_API_KEY:
         logger.error("Chave da OpenWeather não encontrada no ambiente")
         return None
@@ -54,17 +53,27 @@ def obter_dados_openweather(lat: float, lon: float):
         response.raise_for_status()
         data = response.json()
 
+        # Precipitação: chuva ou neve
+        chuva = 0.0
+        if "rain" in data:
+            chuva = data["rain"].get("1h") or data["rain"].get("3h") or 0.0
+
+        neve = 0.0
+        if "snow" in data:
+            neve = data["snow"].get("1h") or data["snow"].get("3h") or 0.0
+
         return {
             "cidade": data.get("name"),
             "temperatura": data["main"]["temp"],
             "umidade": data["main"]["humidity"],
             "vento": data["wind"]["speed"],
-            "descricao": data["weather"][0]["description"]
+            "descricao": data["weather"][0]["description"],
+            "chuva_mm": chuva,
+            "neve_mm": neve
         }
     except Exception as e:
         logger.error(f"Erro ao buscar dados do OpenWeather: {e}")
         return None
-
 
 # --- Função para processar AQI personalizado ---
 def processar_aqi_para_usuario(db: Session, usuario_id: int, aqi_original: float):
@@ -79,12 +88,12 @@ def processar_aqi_para_usuario(db: Session, usuario_id: int, aqi_original: float
                 "sensibilidade_alta": perfil.sensibilidade_alta
             }
             aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil_dict)
-
+            
             try:
                 salvar_historico(db, usuario_id, aqi_original, aqi_personalizado, nivel_alerta)
             except Exception as e:
                 logger.error(f"Erro ao salvar histórico: {e}")
-
+            
             return aqi_personalizado, nivel_alerta
         else:
             logger.warning(f"Perfil não encontrado para usuário {usuario_id}")
@@ -92,6 +101,9 @@ def processar_aqi_para_usuario(db: Session, usuario_id: int, aqi_original: float
     except Exception as e:
         logger.error(f"Erro ao processar perfil do usuário: {e}")
         return aqi_original, "verde"
+
+# --- Endpoint principal ---
+app = APIRouter()
 
 @app.get("/monitor/aqi", response_model=AqiResponse)
 def monitor_aqi_live(
@@ -122,7 +134,7 @@ def monitor_aqi_live(
             except Exception as e:
                 logger.error(f"Erro ao enviar alerta push: {e}")
 
-        # Obter dados meteorológicos da OpenWeather
+        # Obter dados meteorológicos da OpenWeather (inclui chuva/neve)
         clima = obter_dados_openweather(lat, lon)
 
         logger.info(f"Resposta enviada com sucesso: AQI original={aqi_original}, AQI personalizado={aqi_personalizado}")
