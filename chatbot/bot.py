@@ -143,22 +143,27 @@ HISTÓRICO DA CONVERSA:
 
     # Adicionar dados de AQI se relevante
     if ctx_msg["menciona_aqi"]:
-        dados_aqi = obter_dados_aqi(cidade)
-        contexto_texto += f"\nDADOS DE QUALIDADE DO AR - {cidade}:\n"
+        try:
+            dados_aqi = obter_dados_aqi(cidade)
+            contexto_texto += f"\nDADOS DE QUALIDADE DO AR - {cidade}:\n"
 
-        if ctx_msg["data_referencia"]:
-            # Buscar previsão específica
-            for p in dados_aqi["previsoes"]:
-                if p["data"] == ctx_msg["data_referencia"]:
-                    contexto_texto += f"Data: {p['data']}\n"
-                    contexto_texto += f"AQI Previsto: {p['aqi_previsto']}\n"
-                    contexto_texto += f"Nível de Alerta: {p['nivel_alerta']}\n"
-                    break
-        else:
-            # Mostrar próximos 7 dias
-            contexto_texto += "Previsões para os próximos 7 dias:\n"
-            for p in dados_aqi["previsoes"][:7]:
-                contexto_texto += f"- {p['data']}: AQI {p['aqi_previsto']} ({p['nivel_alerta']})\n"
+            if ctx_msg["data_referencia"]:
+                # Buscar previsão específica
+                for p in dados_aqi["previsoes"]:
+                    if p["data"] == ctx_msg["data_referencia"]:
+                        contexto_texto += f"Data: {p['data']}\n"
+                        contexto_texto += f"AQI Previsto: {p['aqi_previsto']}\n"
+                        contexto_texto += f"Nível de Alerta: {p['nivel_alerta']}\n"
+                        break
+            else:
+                # Mostrar próximos 7 dias
+                contexto_texto += "Previsões para os próximos 7 dias:\n"
+                for p in dados_aqi["previsoes"][:7]:
+                    contexto_texto += f"- {p['data']}: AQI {p['aqi_previsto']} ({p['nivel_alerta']})\n"
+        except FileNotFoundError:
+            contexto_texto += f"\n[NOTA: Modelo de previsão não disponível. Informe ao usuário que o sistema está em manutenção.]\n"
+        except Exception as e:
+            contexto_texto += f"\n[NOTA: Erro ao obter previsões. Informe ao usuário que os dados não estão disponíveis no momento.]\n"
 
     contexto_texto += f"\nPERGUNTA ATUAL: {mensagem}\n"
     contexto_texto += "\nINSTRUÇÕES: Responda APENAS com base nos dados acima. Não invente informações. Se não tiver dados suficientes, informe o usuário."
@@ -194,7 +199,7 @@ def configurar_gemini():
         ]
 
         return genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.5-flash",
             generation_config=generation_config,
             safety_settings=safety_settings
         )
