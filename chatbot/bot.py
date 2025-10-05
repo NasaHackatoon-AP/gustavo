@@ -18,6 +18,7 @@ app = APIRouter()
 # Modelo da requisição
 class Mensagem(BaseModel):
     texto: str
+    usuario_id: str
 
 # Carregar intents
 with open("chatbot/intents.json", "r", encoding="utf-8") as f:
@@ -124,9 +125,9 @@ REGRAS IMPORTANTES:
 """
 
 # Construir contexto completo para LLM
-def construir_contexto_llm(mensagem: str) -> str:
-    cidade = contexto.obter_local() or "São Paulo"
-    historico = contexto.obter_historico()
+def construir_contexto_llm(mensagem: str, usuario_id: str) -> str:
+    cidade = contexto.obter_local(usuario_id) or "São Paulo"
+    historico = contexto.obter_historico(usuario_id)
     ctx_msg = extrair_contexto_mensagem(mensagem)
 
     # Montar contexto base
@@ -235,34 +236,34 @@ def gerar_resposta_llm(contexto_completo: str) -> str:
         return "Sistema LLM não configurado. Configure o Gemini para ativar respostas inteligentes."
 
 # Função principal de resposta
-def responder(mensagem: str) -> str:
+def responder(mensagem: str, usuario_id: str) -> str:
     msg_lower = mensagem.lower()
 
     # 1. Checar se é definição de local
     if "cidade" in msg_lower or "local" in msg_lower:
         palavras = msg_lower.split()
         local = palavras[-1].capitalize()
-        contexto.definir_local(local)
+        contexto.definir_local(usuario_id, local)
         resposta = f"Ok, agora estou considerando '{local}' como seu local."
-        contexto.adicionar(mensagem, resposta)
+        contexto.adicionar(usuario_id, mensagem, resposta)
         return resposta
 
     # 2. Construir contexto completo
-    contexto_completo = construir_contexto_llm(mensagem)
+    contexto_completo = construir_contexto_llm(mensagem, usuario_id)
 
     # 3. Gerar resposta com LLM (preparado para Gemini)
     resposta = gerar_resposta_llm(contexto_completo)
 
     # 4. Se LLM não estiver configurado, usar lógica de fallback
     if "não configurado" in resposta:
-        resposta = responder_fallback(mensagem)
+        resposta = responder_fallback(mensagem, usuario_id)
 
     # 5. Salvar no contexto
-    contexto.adicionar(mensagem, resposta)
+    contexto.adicionar(usuario_id, mensagem, resposta)
     return resposta
 
 # Função de fallback (lógica atual)
-def responder_fallback(mensagem: str) -> str:
+def responder_fallback(mensagem: str, usuario_id: str) -> str:
     msg_lower = mensagem.lower()
 
     # Checar intents predefinidos
@@ -273,7 +274,7 @@ def responder_fallback(mensagem: str) -> str:
 
     # Perguntas sobre AQI
     if "aqi" in msg_lower or "qualidade do ar" in msg_lower:
-        cidade = contexto.obter_local() or "São Paulo"
+        cidade = contexto.obter_local(usuario_id) or "São Paulo"
         dados_aqi = obter_dados_aqi(cidade)
         previsoes = dados_aqi["previsoes"]
         hoje = datetime.now().date()

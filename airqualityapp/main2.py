@@ -92,11 +92,11 @@ def gerar_df_cidade(cidade: str):
 
 @app.post("/chatbot/")
 def chat(mensagem: Mensagem):
-    resposta = responder(mensagem.texto)
+    resposta = responder(mensagem.texto, mensagem.usuario_id)
     return {
         "resposta": resposta,
-        "local_atual": contexto.obter_local(),
-        "historico": contexto.historico[-5:]  # últimos 5 registros
+        "local_atual": contexto.obter_local(mensagem.usuario_id),
+        "historico": contexto.obter_historico(mensagem.usuario_id)[-5:]  # últimos 5 registros
     }
     
 # ----------------------------
