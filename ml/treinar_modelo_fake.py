@@ -4,6 +4,11 @@ import requests
 import numpy as np
 import joblib
 from datetime import datetime
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Air Quality Monitor")
 
@@ -36,37 +41,58 @@ def obter_aqi(
         url = "https://api.openaq.org/v3/locations"
         params = {
             "coordinates": f"{lat},{lon}",
-            "radius": 2000,
-            "limit": 1
+            "radius": 25000,  # Aumentar raio para 25km
+            "limit": 10
         }
-        response = requests.get(url, params=params, timeout=5)
+        logger.info(f"Buscando dados OpenAQ para coordenadas: {lat},{lon} com raio 25km")
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
 
+        logger.info(f"Resposta OpenAQ: {len(data.get('results', []))} estações encontradas")
+
         if "results" not in data or len(data["results"]) == 0:
+            logger.warning("Nenhuma estação encontrada próxima às coordenadas")
             aqi_original = 50  # fallback default
         else:
             # Pegar medições da estação mais próxima
-            location = data["results"][0]
-            measurements = location.get("measurements", [])
-
-            # Procurar PM2.5
             aqi_original = 50  # default
-            for measurement in measurements:
-                if measurement.get("parameter") in ["pm25", "pm2.5"]:
-                    value = measurement.get("value")
-                    if value is not None:
-                        # Converter PM2.5 para AQI (simplificado)
-                        if value <= 12.0:
-                            aqi_original = int((50 / 12.0) * value)
-                        elif value <= 35.4:
-                            aqi_original = int(51 + ((100 - 51) / (35.4 - 12.1)) * (value - 12.1))
-                        elif value <= 55.4:
-                            aqi_original = int(101 + ((150 - 101) / (55.4 - 35.5)) * (value - 35.5))
-                        else:
-                            aqi_original = int(151 + ((200 - 151) / (150.4 - 55.5)) * min(value - 55.5, 95))
-                        break
-    except Exception:
+
+            for location in data["results"]:
+                location_name = location.get("name", "Unknown")
+                measurements = location.get("measurements", [])
+
+                logger.info(f"Estação: {location_name} - {len(measurements)} medições")
+
+                # Procurar PM2.5
+                for measurement in measurements:
+                    param = measurement.get("parameter")
+                    if param in ["pm25", "pm2.5"]:
+                        value = measurement.get("value")
+                        logger.info(f"PM2.5 encontrado na estação {location_name}: {value}")
+
+                        if value is not None:
+                            # Converter PM2.5 para AQI (simplificado)
+                            if value <= 12.0:
+                                aqi_original = int((50 / 12.0) * value)
+                            elif value <= 35.4:
+                                aqi_original = int(51 + ((100 - 51) / (35.4 - 12.1)) * (value - 12.1))
+                            elif value <= 55.4:
+                                aqi_original = int(101 + ((150 - 101) / (55.4 - 35.5)) * (value - 35.5))
+                            else:
+                                aqi_original = int(151 + ((200 - 151) / (150.4 - 55.5)) * min(value - 55.5, 95))
+
+                            logger.info(f"AQI calculado: {aqi_original} (PM2.5: {value})")
+                            break
+
+                if aqi_original != 50:  # Se encontrou dados, parar de procurar
+                    break
+
+            if aqi_original == 50:
+                logger.warning("PM2.5 não encontrado em nenhuma estação, usando fallback")
+
+    except Exception as e:
+        logger.error(f"Erro ao consultar OpenAQ: {e}")
         aqi_original = 50  # fallback caso API falhe
 
     # Criar features para o modelo fake

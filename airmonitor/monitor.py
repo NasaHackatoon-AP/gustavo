@@ -12,7 +12,7 @@ NASA_API_KEY = os.getenv("NASA_API_KEY")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def obter_aqi_nasa_tempo_geo(lat: float, lon: float, raio_em_metros: int = 5000):
+def obter_aqi_nasa_tempo_geo(lat: float, lon: float, raio_em_metros: int = 25000):
     """
     Consulta AQI da NASA TEMPO usando latitude e longitude.
     Retorna um valor numérico de AQI ou None se houver erro.
@@ -26,44 +26,58 @@ def obter_aqi_nasa_tempo_geo(lat: float, lon: float, raio_em_metros: int = 5000)
         # Garantir que coordinates está no formato correto
         coordinates = f"{lat},{lon}"
 
-        # Garantir que radius é numérico
+        # Garantir que radius é numérico (OpenAQ aceita até 100000m = 100km)
+        raio_valido = min(int(raio_em_metros), 100000)
+
         params = {
             "coordinates": coordinates,
-            "radius": int(raio_em_metros),
-            "limit": 100
+            "radius": raio_valido,
+            "limit": 10
         }
 
-        logger.info(f"Buscando estações de qualidade do ar perto de ({lat}, {lon}) com raio {raio_em_metros}m...")
+        logger.info(f"Buscando estações de qualidade do ar perto de ({lat}, {lon}) com raio {raio_valido}m...")
 
         resp = requests.get(f"{OPENAQ_API}/locations", headers=headers, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
 
-        logger.info(f"Resposta da API recebida com sucesso")
+        num_results = len(data.get("results", []))
+        logger.info(f"API retornou {num_results} estações")
 
         # Extrair valor AQI da resposta
-        if "results" in data and len(data["results"]) > 0:
-            location = data["results"][0]
+        if "results" in data and num_results > 0:
+            # Tentar encontrar PM2.5 em qualquer estação retornada
+            for idx, location in enumerate(data["results"]):
+                location_name = location.get("name", "Unknown")
+                measurements = location.get("measurements", [])
 
-            # Tentar obter medições da estação mais próxima
-            if "measurements" in location and len(location["measurements"]) > 0:
-                # Extrair PM2.5 que é o principal indicador de AQI
-                for measurement in location["measurements"]:
-                    if measurement.get("parameter") in ["pm25", "pm2.5"]:
-                        value = measurement.get("value")
-                        if value is not None:
-                            # Converter PM2.5 em AQI (simplificado)
-                            aqi = pm25_to_aqi(value)
-                            logger.info(f"AQI calculado: {aqi} (PM2.5: {value})")
-                            return aqi
+                logger.info(f"Estação {idx+1}: {location_name} - {len(measurements)} medições")
 
-                # Se não encontrar PM2.5, usar primeira medição disponível
-                first_measurement = location["measurements"][0]
-                value = first_measurement.get("value", 50)
-                logger.warning(f"PM2.5 não encontrado, usando {first_measurement.get('parameter')}: {value}")
-                return int(value) if value else 50
+                if len(measurements) > 0:
+                    # Extrair PM2.5 que é o principal indicador de AQI
+                    for measurement in measurements:
+                        param = measurement.get("parameter")
+                        if param in ["pm25", "pm2.5"]:
+                            value = measurement.get("value")
+                            if value is not None:
+                                # Converter PM2.5 em AQI
+                                aqi = pm25_to_aqi(value)
+                                logger.info(f"✓ PM2.5 encontrado na estação '{location_name}': {value} µg/m³ → AQI {aqi}")
+                                return aqi
 
-            logger.warning("Nenhuma medição encontrada na estação mais próxima")
+            # Se não encontrar PM2.5, tentar outros poluentes
+            logger.warning("PM2.5 não encontrado, tentando outros poluentes...")
+            for location in data["results"]:
+                measurements = location.get("measurements", [])
+                for measurement in measurements:
+                    param = measurement.get("parameter")
+                    value = measurement.get("value")
+                    if param in ["pm10", "no2", "o3", "so2", "co"] and value is not None:
+                        logger.info(f"Usando {param}: {value}")
+                        # Conversão simplificada (não é ideal, mas evita fallback)
+                        return min(int(value), 200)
+
+            logger.warning("Nenhum poluente mensurável encontrado")
             return 50
 
         logger.warning("Nenhuma estação encontrada próxima às coordenadas")
