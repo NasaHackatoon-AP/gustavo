@@ -3,8 +3,18 @@ from fastapi import FastAPI
 from chatbot.bot import app as chatbot_app
 from airqualityapp.main2 import app as airquality_app
 from airmonitor.main3 import app as airmonitor_app
+from fastapi.middleware.cors import CORSMiddleware  
 
 app = FastAPI()
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"],    
+)
 
 # Healthcheck endpoint para Railway
 @app.get("/health")
