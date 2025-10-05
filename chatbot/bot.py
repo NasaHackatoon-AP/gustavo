@@ -172,7 +172,7 @@ HISTÓRICO DA CONVERSA:
 
     return contexto_texto
 
-# Configuração do Gemini
+# Configuração do Gemini 
 GEMINI_MODEL = None
 
 def configurar_gemini():
