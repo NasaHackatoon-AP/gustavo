@@ -61,9 +61,18 @@ OPENWEATHER_API_URL = os.getenv("OPENWEATHER_API_URL")
 class Mensagem(BaseModel):
     texto: str
 
-# Carregar intents
-with open("chatbot/intents.json", "r", encoding="utf-8") as f:
-    INTENTS = json.load(f)
+# Carregar intents com caminho absoluto
+import pathlib
+base_dir = pathlib.Path(__file__).parent.parent
+intents_path = base_dir / "chatbot" / "intents.json"
+
+try:
+    with open(intents_path, "r", encoding="utf-8") as f:
+        INTENTS = json.load(f)
+    print(f"✅ Intents carregados de: {intents_path}")
+except FileNotFoundError:
+    print(f"⚠️ Arquivo intents.json não encontrado em: {intents_path}")
+    INTENTS = {"intents": []}
 
 # Função para gerar df_ultimo_dia simulado por cidade
 def gerar_df_cidade(cidade: str):

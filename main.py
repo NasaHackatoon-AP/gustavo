@@ -6,6 +6,24 @@ from airmonitor.main3 import app as airmonitor_app
 
 app = FastAPI()
 
+# Healthcheck endpoint para Railway
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "message": "API is running"}
+
+@app.get("/")
+def root():
+    return {
+        "message": "🌍 NASA Air Quality API",
+        "status": "online",
+        "endpoints": {
+            "chatbot": "/chatbot",
+            "air_quality": "/airquality",
+            "air_monitor": "/airmonitor",
+            "docs": "/docs"
+        }
+    }
+
 app.include_router(chatbot_app, prefix="/chatbot", tags=["Chatbot"])
 app.include_router(airquality_app, prefix="/airquality", tags=["Air Quality"])
 app.include_router(airmonitor_app, prefix="/airmonitor", tags=["Air Monitor"])
