@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from .database import get_db, Base, engine
-from .schemas import UsuarioCreate, PerfilSaudeCreate, AQIResponse, LoginRequest, LoginResponse, UsuarioResponse
+from .schemas import UsuarioCreate, PerfilSaudeCreate, PerfilSaudeCreateAuth, AQIResponse, LoginRequest, LoginResponse, UsuarioResponse
 from .crud import criar_usuario, criar_perfil_saude, obter_perfil_usuario, salvar_historico, login_usuario, get_current_user
 from .utils import calcular_indice_personalizado, ajustar_aqi_com_meteorologia
 from .mail_utils import enviar_alerta_email
@@ -34,6 +34,22 @@ app = APIRouter()
 
 # Configuração OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/airquality/token")
+
+# =============================================================================
+# FUNÇÕES DE AUTENTICAÇÃO
+# =============================================================================
+
+def get_authenticated_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    Dependência para obter usuário autenticado via Bearer Token
+
+    Uso:
+        @app.get("/endpoint")
+        def meu_endpoint(usuario = Depends(get_authenticated_user)):
+            # usuario já está autenticado
+            return {"user_id": usuario.id}
+    """
+    return get_current_user(db, token)
 
 # APIs
 OPENAQ_API = os.getenv("OPENAQ_API")
@@ -466,9 +482,26 @@ def get_me_endpoint(token: str = Depends(oauth2_scheme), db: Session = Depends(g
     """Retorna dados do usuário autenticado"""
     return get_current_user(db, token)
 
-@app.post("/perfil", summary="Criar perfil de saúde")
-def criar_perfil_endpoint(perfil: PerfilSaudeCreate, db: Session = Depends(get_db)):
-    return criar_perfil_saude(db, perfil)
+@app.post("/perfil", summary="Criar perfil de saúde (requer autenticação)")
+def criar_perfil_endpoint(
+    perfil_data: PerfilSaudeCreateAuth,
+    usuario_autenticado = Depends(get_authenticated_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Cria perfil de saúde para o usuário autenticado.
+    Requer Bearer Token no header: Authorization: Bearer <token>
+    """
+    # Criar objeto completo com usuario_id do usuário autenticado
+    perfil_completo = PerfilSaudeCreate(
+        usuario_id=usuario_autenticado.id,
+        possui_asma=perfil_data.possui_asma,
+        possui_dpoc=perfil_data.possui_dpoc,
+        possui_alergias=perfil_data.possui_alergias,
+        fumante=perfil_data.fumante,
+        sensibilidade_alta=perfil_data.sensibilidade_alta
+    )
+    return criar_perfil_saude(db, perfil_completo)
 
 # =============================================================================
 # RECUPERAÇÃO DE SENHA
@@ -510,12 +543,19 @@ def delete_account(
 # PREVISÃO DE AQI
 # =============================================================================
 
-@app.get("/aqi/previsao/{usuario_id}", response_model=PrevisaoAQIResponse, summary="Previsão de AQI personalizado para 15 dias")
-def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
-    # 1. Busca perfil do usuário
-    perfil = obter_perfil_usuario(db, usuario_id)
+@app.get("/aqi/previsao", response_model=PrevisaoAQIResponse, summary="Previsão de AQI personalizado para 15 dias (requer autenticação)")
+def previsao_aqi_15_dias(
+    usuario_autenticado = Depends(get_authenticated_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna previsão de AQI para os próximos 15 dias do usuário autenticado.
+    Requer Bearer Token no header: Authorization: Bearer <token>
+    """
+    # 1. Busca perfil do usuário autenticado
+    perfil = obter_perfil_usuario(db, usuario_autenticado.id)
     if not perfil:
-        raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado")
+        raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado. Crie um perfil primeiro.")
     
     # 2. Criar DataFrame com dados do usuário
     df_ultimo_dia = pd.DataFrame([{
@@ -556,12 +596,19 @@ def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
 # ENDPOINT AQI PERSONALIZADO
 # =============================================================================
 
-@app.get("/aqi/{usuario_id}", response_model=AQIResponse, summary="Obter AQI personalizado")
-def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
-    # Busca perfil do usuário
-    perfil = obter_perfil_usuario(db, usuario_id)
+@app.get("/aqi", response_model=AQIResponse, summary="Obter AQI personalizado (requer autenticação)")
+def obter_aqi_personalizado(
+    usuario_autenticado = Depends(get_authenticated_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna AQI personalizado do usuário autenticado.
+    Requer Bearer Token no header: Authorization: Bearer <token>
+    """
+    # Busca perfil do usuário autenticado
+    perfil = obter_perfil_usuario(db, usuario_autenticado.id)
     if not perfil:
-        raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado")
+        raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado. Crie um perfil primeiro.")
 
     cidade = perfil.usuario.cidade or "São Paulo"
 

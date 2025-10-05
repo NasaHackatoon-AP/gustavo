@@ -18,6 +18,14 @@ class PerfilSaudeCreate(BaseModel):
     fumante: bool = False
     sensibilidade_alta: bool = False
 
+class PerfilSaudeCreateAuth(BaseModel):
+    """Schema para criar perfil usando autenticação (não precisa de usuario_id)"""
+    possui_asma: bool = False
+    possui_dpoc: bool = False
+    possui_alergias: bool = False
+    fumante: bool = False
+    sensibilidade_alta: bool = False
+
 class AQIResponse(BaseModel):
     aqi_original: int
     aqi_personalizado: int
