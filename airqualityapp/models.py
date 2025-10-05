@@ -8,12 +8,12 @@ class Usuario(Base):
     __tablename__ = "usuario"
 
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    senha_hash = Column(String, nullable=False)
+    nome = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    senha_hash = Column(String(255), nullable=False)
     data_nascimento = Column(Date, nullable=True)
-    cidade = Column(String, nullable=True)
-    estado = Column(String, nullable=True)
+    cidade = Column(String(255), nullable=True)
+    estado = Column(String(255), nullable=True)
 
 
 class PerfilSaude(Base):

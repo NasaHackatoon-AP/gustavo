@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from .database import get_db, Base, engine
 from .schemas import UsuarioCreate, PerfilSaudeCreate, AQIResponse
@@ -25,7 +25,7 @@ print("Aplicativo iniciado!")
 # Criação das tabelas (executa apenas uma vez)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Air Quality App - Parte 1")
+app = APIRouter()
 
 @app.get("/")
 def root():
@@ -39,8 +39,9 @@ def root():
 
 # APIs
 OPENAQ_API = os.getenv("OPENAQ_API")
-NASA_TEMPO_API = os.getenv("NASA_TEMPO_API")
 NASA_API_KEY = os.getenv("NASA_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+OPENWEATHER_API_URL = os.getenv("OPENWEATHER_API_URL")
 
 # Modelo da requisição
 class Mensagem(BaseModel):
@@ -83,14 +84,14 @@ def chat(mensagem: Mensagem):
 # ----------------------------
 
 def obter_dados_meteorologia(cidade: str):
+
     try:
-        headers = {
-            "Authorization": f"Bearer {NASA_API_KEY}"  # token do .env
-        }
         params = {
-            "city": cidade
+        "q": cidade,
+        "appid": OPENWEATHER_API_KEY,
+        "units": "metric"
         }
-        resp = requests.get("https://api.nasa.gov/tempo", headers=headers, params=params, timeout=10)
+        resp = requests.get(OPENWEATHER_API_URL, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
@@ -162,7 +163,9 @@ def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
 
     # Obter AQI original da OpenAQ
     try:
-        resp = requests.get(f"{OPENAQ_API}?city={cidade}&limit=1")
+        headers = {"X-API-Key": NASA_API_KEY}
+        params = {"city": cidade}
+        resp = requests.get(f"{OPENAQ_API}/locations", params=params, headers=headers )
         dados = resp.json()
         aqi_original = int(dados['results'][0]['measurements'][0]['value'])
     except Exception:

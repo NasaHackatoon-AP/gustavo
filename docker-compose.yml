@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - OPENAQ_API=${OPENAQ_API}
+      - NASA_API_KEY=${NASA_API_KEY}
+      - OPENWEATHER_API_KEY={$OPENWEATHER_API_KEY}
+      - OPENWEATHER_API_URL={$OPENWEATHER_API_URL}
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+
+  db:
+    image: mysql:8.0
+    container_name: mysql_db
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: kaue1537
+      MYSQL_DATABASE: aura-air-db
+      MYSQL_USER: gustavo
+      MYSQL_PASSWORD: kaue1537
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:
