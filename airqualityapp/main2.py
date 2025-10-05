@@ -21,8 +21,23 @@ load_dotenv()
 
 print("Aplicativo iniciado!")
 
-# Criação das tabelas (executa apenas uma vez)
-Base.metadata.create_all(bind=engine)
+# Criação das tabelas com retry (aguarda o banco estar pronto)
+import time
+max_retries = 10
+retry_interval = 5
+
+for attempt in range(max_retries):
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ Tabelas criadas com sucesso!")
+        break
+    except Exception as e:
+        if attempt < max_retries - 1:
+            print(f"⏳ Tentativa {attempt + 1}/{max_retries} falhou. Aguardando banco de dados... ({e})")
+            time.sleep(retry_interval)
+        else:
+            print(f"❌ Erro ao conectar ao banco após {max_retries} tentativas: {e}")
+            raise
 
 app = APIRouter()
 
