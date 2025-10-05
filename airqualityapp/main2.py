@@ -48,9 +48,23 @@ OPENWEATHER_API_URL = os.getenv("OPENWEATHER_API_URL")
 # Modelo da requisição do chatbot
 class Mensagem(BaseModel):
     texto: str
+    
+class AQIResponse(BaseModel):
+    aqi_original: int
+    aqi_personalizado: int
+    nivel_alerta: str
+    
+class PrevisaoDia(BaseModel):
+    data: str
+    aqi_previsto: int
+    nivel_alerta: str
+
+class PrevisaoAQIResponse(BaseModel):
+    usuario: str
+    previsoes: List[PrevisaoDia]
 
 # Carregar intents
-intents_path = os.path.join(os.path.dirname(__file__), "..", "chatbot", "intents.json")
+intents_path = os.path.join(os.path.dirname(_file_), "..", "chatbot", "intents.json")
 try:
     with open(intents_path, "r", encoding="utf-8") as f:
         INTENTS = json.load(f)
@@ -135,7 +149,7 @@ def configurar_gemini():
         ]
 
         model = genai.GenerativeModel(
-            model_name="models/gemini-2.5-flash",
+            model_name="gemini-1.5-flash",
             generation_config=generation_config,
             safety_settings=safety_settings
         )
@@ -496,13 +510,14 @@ def delete_account(
 # PREVISÃO DE AQI
 # =============================================================================
 
-@app.get("/aqi/previsao/{usuario_id}", summary="Previsão de AQI personalizado para 15 dias")
+@app.get("/aqi/previsao/{usuario_id}", response_model=PrevisaoAQIResponse, summary="Previsão de AQI personalizado para 15 dias")
 def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
     # 1. Busca perfil do usuário
     perfil = obter_perfil_usuario(db, usuario_id)
     if not perfil:
         raise HTTPException(status_code=404, detail="Perfil de saúde não encontrado")
     
+    # 2. Criar DataFrame com dados do usuário
     df_ultimo_dia = pd.DataFrame([{
         "data": pd.Timestamp.today(),
         "T2M": 25,  # temperatura média
@@ -510,22 +525,32 @@ def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
         "ALLSKY_SFC_SW_DWN": 200,  # radiação média
         "possui_asma": int(perfil.possui_asma),
         "fumante": int(perfil.fumante),
-        "sensibilidade_alta": int(perfil.sensibilidade_alta)
+        "sensibilidade_alta": int(perfil.sensibilidade_alta),
+        "dia_ano": datetime.now().timetuple().tm_yday,
+        "mes": datetime.now().month
     }])
     
-    if "dia_ano" not in df_ultimo_dia.columns:
-        df_ultimo_dia["dia_ano"] = datetime.now().timetuple().tm_yday
-    if "mes" not in df_ultimo_dia.columns: 
-        df_ultimo_dia["mes"] = datetime.now().month
-
     # 3. Chama a função de previsão do ML
     try:
-        previsoes = prever_proximos_15_dias(df_ultimo_dia)
+        previsoes_raw = prever_proximos_15_dias(df_ultimo_dia)
     except Exception as e:
         print(f"⚠️ Erro na previsão: {e}")
-        previsoes = {"mensagem": "Previsão temporariamente indisponível"}
+        previsoes_raw = []
 
-    return {"usuario": perfil.usuario.nome, "previsoes": previsoes}
+    # 4. Converter previsões para objetos Pydantic
+    previsoes = []
+    for p in previsoes_raw:
+        previsoes.append(PrevisaoDia(
+            data=p.get("data", ""),
+            aqi_previsto=int(p.get("aqi_previsto", 0)),
+            nivel_alerta=p.get("nivel_alerta", "desconhecido")
+        ))
+
+    # 5. Retornar objeto Pydantic completo
+    return PrevisaoAQIResponse(
+        usuario=perfil.usuario.nome,
+        previsoes=previsoes
+    )
 
 # =============================================================================
 # ENDPOINT AQI PERSONALIZADO
@@ -550,10 +575,10 @@ def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
     except Exception:
         aqi_original = 50  # valor default se API falhar
 
-    # Calcula AQI personalizado baseado em saúde (passando o objeto PerfilSaude)
+    # Calcula AQI personalizado
     aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil)
 
-    # Ajusta AQI com meteorologia real
+    # Ajusta AQI com meteorologia
     meteorologia = obter_dados_meteorologia(cidade)
     aqi_personalizado = ajustar_aqi_com_meteorologia(
         aqi_personalizado,
@@ -578,17 +603,15 @@ def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
     # Envia alerta por email se AQI for alto
     if nivel_alerta in ["laranja", "vermelho"]:
         assunto = f"Alerta de qualidade do ar: {nivel_alerta.upper()}"
-        mensagem = f"Olá {perfil.usuario.nome}, a qualidade do ar em {cidade} está {nivel_alerta}. AQI personalizado: {aqi_personalizado}"
-        
-        # Tentar enviar e-mail, mas não falhar se não conseguir
+        mensagem_email = f"Olá {perfil.usuario.nome}, a qualidade do ar em {cidade} está {nivel_alerta}. AQI personalizado: {aqi_personalizado}"
         try:
-            enviar_alerta_email(perfil.usuario.email, assunto, mensagem)
+            enviar_alerta_email(perfil.usuario.email, assunto, mensagem_email)
         except Exception as e:
             print(f"⚠️ Aviso: Não foi possível enviar alerta por e-mail: {e}")
-            # Continuar mesmo se e-mail falhar
 
-    return {
-        "aqi_original": aqi_original,
-        "aqi_personalizado": aqi_personalizado,
-        "nivel_alerta": nivel_alerta
-    }
+    # Retorna *objeto Pydantic*, que será convertido automaticamente em JSON
+    return AQIResponse(
+        aqi_original=int(aqi_original),
+        aqi_personalizado=int(aqi_personalizado),
+        nivel_alerta=nivel_alerta
+    )
