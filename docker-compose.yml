@@ -15,10 +15,12 @@ services:
       - EMAIL_PASS=${EMAIL_PASS}
       - OPENAQ_API=${OPENAQ_API}
       - NASA_API_KEY=${NASA_API_KEY}
-      - OPENWEATHER_API_KEY={$OPENWEATHER_API_KEY}
-      - OPENWEATHER_API_URL={$OPENWEATHER_API_URL}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - OPENWEATHER_API_URL=${OPENWEATHER_API_URL}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
     volumes:
       - .:/app
 
@@ -34,6 +36,12 @@ services:
       MYSQL_PASSWORD: kaue1537
     volumes:
       - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pkaue1537"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
 volumes:
   db_data:

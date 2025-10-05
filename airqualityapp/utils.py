@@ -16,11 +16,18 @@ def obter_dados_meteorologia(lat, lon):
 # Calcula AQI personalizado com base no perfil de saúde
 def calcular_indice_personalizado(aqi_original, perfil):
     ajuste = 0
-    if perfil.possui_asma: ajuste += 20
-    if perfil.possui_dpoc: ajuste += 15
-    if perfil.possui_alergias: ajuste += 10
-    if perfil.fumante: ajuste += 10
-    if perfil.sensibilidade_alta: ajuste += 5
+
+    # Suporta tanto objetos ORM quanto dicionários
+    def get_attr(obj, key):
+        if isinstance(obj, dict):
+            return obj.get(key, False)
+        return getattr(obj, key, False)
+
+    if get_attr(perfil, "possui_asma"): ajuste += 20
+    if get_attr(perfil, "possui_dpoc"): ajuste += 15
+    if get_attr(perfil, "possui_alergias"): ajuste += 10
+    if get_attr(perfil, "fumante"): ajuste += 10
+    if get_attr(perfil, "sensibilidade_alta"): ajuste += 5
 
     aqi_personalizado = aqi_original + ajuste
     if aqi_personalizado <= 50:
