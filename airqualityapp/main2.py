@@ -1,45 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from .database import get_db, Base, engine
-from .schemas import UsuarioCreate, PerfilSaudeCreate, AQIResponse
-from .crud import criar_usuario, criar_perfil_saude, obter_perfil_usuario, salvar_historico
+from .schemas import UsuarioCreate, PerfilSaudeCreate, AQIResponse, LoginRequest, LoginResponse, UsuarioResponse
+from .crud import criar_usuario, criar_perfil_saude, obter_perfil_usuario, salvar_historico, login_usuario, get_current_user
 from .utils import calcular_indice_personalizado, ajustar_aqi_com_meteorologia
 from .mail_utils import enviar_alerta_email
 import requests
 import os
 from dotenv import load_dotenv
-from ml.predict import prever_proximos_15_dias
+# from ml.predict import prever_proximos_15_dias  # Comentado - caminho incorreto
 import pandas as pd
 from datetime import datetime
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from chatbot.bot import responder, contexto
+# from chatbot.bot import responder, contexto  # Comentado - caminho incorreto
 import random
 import json
+from .crud import gerar_token_redefinicao
+from .crud import redefinir_senha
+from fastapi import FastAPI, Form, Depends, HTTPException
+from sqlalchemy.orm import Session
+from . import crud
+from .database import get_db
+
 
 load_dotenv()
 
 print("Aplicativo iniciado!")
 
-# Criação das tabelas com retry (aguarda o banco estar pronto)
-import time
-max_retries = 10
-retry_interval = 5
-
-for attempt in range(max_retries):
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("✅ Tabelas criadas com sucesso!")
-        break
-    except Exception as e:
-        if attempt < max_retries - 1:
-            print(f"⏳ Tentativa {attempt + 1}/{max_retries} falhou. Aguardando banco de dados... ({e})")
-            time.sleep(retry_interval)
-        else:
-            print(f"❌ Erro ao conectar ao banco após {max_retries} tentativas: {e}")
-            raise
+# Criação das tabelas (executa apenas uma vez)
+Base.metadata.create_all(bind=engine)
 
 app = APIRouter()
+
+# Configuração OAuth2
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/airquality/token")
 
 @app.get("/")
 def root():
@@ -61,18 +57,10 @@ OPENWEATHER_API_URL = os.getenv("OPENWEATHER_API_URL")
 class Mensagem(BaseModel):
     texto: str
 
-# Carregar intents com caminho absoluto
-import pathlib
-base_dir = pathlib.Path(__file__).parent.parent
-intents_path = base_dir / "chatbot" / "intents.json"
-
-try:
-    with open(intents_path, "r", encoding="utf-8") as f:
-        INTENTS = json.load(f)
-    print(f"✅ Intents carregados de: {intents_path}")
-except FileNotFoundError:
-    print(f"⚠️ Arquivo intents.json não encontrado em: {intents_path}")
-    INTENTS = {"intents": []}
+# Carregar intents (comentado - caminho incorreto)
+# with open("chatbot/intents.json", "r", encoding="utf-8") as f:
+#     INTENTS = json.load(f)
+INTENTS = {}  # Placeholder
 
 # Função para gerar df_ultimo_dia simulado por cidade
 def gerar_df_cidade(cidade: str):
@@ -92,11 +80,12 @@ def gerar_df_cidade(cidade: str):
 
 @app.post("/chatbot/")
 def chat(mensagem: Mensagem):
-    resposta = responder(mensagem.texto)
+    # Função temporária até corrigir importação
+    resposta = f"Chatbot temporariamente indisponível. Mensagem recebida: {mensagem.texto}"
     return {
         "resposta": resposta,
-        "local_atual": contexto.obter_local(),
-        "historico": contexto.historico[-5:]  # últimos 5 registros
+        "local_atual": "Não disponível",
+        "historico": []
     }
     
 # ----------------------------
@@ -137,9 +126,63 @@ def obter_dados_meteorologia(cidade: str):
 def criar_usuario_endpoint(usuario: UsuarioCreate, db: Session = Depends(get_db)):
     return criar_usuario(db, usuario)
 
+@app.post("/token", response_model=LoginResponse, summary="OAuth2 Token (para Swagger)")
+def token_endpoint(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    """Endpoint OAuth2 para autenticação no Swagger"""
+    return login_usuario(db, form_data.username, form_data.password)
+
+@app.post("/login", response_model=LoginResponse, summary="Fazer login (JSON)")
+def login_endpoint(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """Autentica usuário e retorna token JWT (JSON)"""
+    return login_usuario(db, login_data.email, login_data.senha)
+
+@app.get("/me", response_model=UsuarioResponse, summary="Obter perfil do usuário logado")
+def get_me_endpoint(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """Retorna dados do usuário autenticado"""
+    return get_current_user(db, token)
+
 @app.post("/perfil", summary="Criar perfil de saúde")
 def criar_perfil_endpoint(perfil: PerfilSaudeCreate, db: Session = Depends(get_db)):
     return criar_perfil_saude(db, perfil)
+
+# ----------------------------
+# Recuperação de senha
+# ----------------------------
+
+@app.post("/forgot-password", summary="Gerar link de redefinição de senha")
+def forgot_password(email: str = Form(...), db: Session = Depends(get_db)):
+    """
+    Gera um token de redefinição de senha (expira em 15 minutos)
+    e envia um link por e-mail ao usuário.
+    """
+    return gerar_token_redefinicao(db, email)
+
+@app.post("/reset-password", summary="Redefinir senha com token de verificação")
+def reset_password(
+    token: str = Form(...),
+    nova_senha: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Permite redefinir a senha de um usuário com base no token enviado por e-mail.
+    """
+    return redefinir_senha(db, token, nova_senha)
+
+# ----------------------------
+# Deletar usuário
+# ----------------------------
+
+@app.delete("/delete-account")
+def delete_account(
+    email: str = Form(...),
+    senha: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Deleta conta do usuário após verificar credenciais"""
+    return crud.deletar_usuario(db, email, senha)
 
 @app.get("/aqi/previsao/{usuario_id}", summary="Previsão de AQI personalizado para 15 dias")
 def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
@@ -163,8 +206,9 @@ def previsao_aqi_15_dias(usuario_id: int, db: Session = Depends(get_db)):
     if "mes" not in df_ultimo_dia.columns: 
         df_ultimo_dia["mes"] = datetime.now().month
 
-    # 3. Chama a função de previsão do ML
-    previsoes = prever_proximos_15_dias(df_ultimo_dia)
+    # 3. Chama a função de previsão do ML (temporariamente desabilitada)
+    # previsoes = prever_proximos_15_dias(df_ultimo_dia)
+    previsoes = {"mensagem": "Previsão temporariamente indisponível - importação ML corrigir"}
 
     return {"usuario": perfil.usuario.nome, "previsoes": previsoes}
 
@@ -220,7 +264,13 @@ def obter_aqi_personalizado(usuario_id: int, db: Session = Depends(get_db)):
     if nivel_alerta in ["laranja", "vermelho"]:
         assunto = f"Alerta de qualidade do ar: {nivel_alerta.upper()}"
         mensagem = f"Olá {perfil.usuario.nome}, a qualidade do ar em {cidade} está {nivel_alerta}. AQI personalizado: {aqi_personalizado}"
-        enviar_alerta_email(perfil.usuario.email, assunto, mensagem)
+        
+        # Tentar enviar e-mail, mas não falhar se não conseguir
+        try:
+            enviar_alerta_email(perfil.usuario.email, assunto, mensagem)
+        except Exception as e:
+            print(f"⚠️ Aviso: Não foi possível enviar alerta por e-mail: {e}")
+            # Continuar mesmo se e-mail falhar
 
     return {
         "aqi_original": aqi_original,

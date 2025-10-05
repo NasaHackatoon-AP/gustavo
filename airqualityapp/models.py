@@ -14,6 +14,8 @@ class Usuario(Base):
     data_nascimento = Column(Date, nullable=True)
     cidade = Column(String(255), nullable=True)
     estado = Column(String(255), nullable=True)
+    reset_token_hash = Column(String(255), nullable=True)
+    reset_expires_at = Column(TIMESTAMP, nullable=True)
 
 
 class PerfilSaude(Base):

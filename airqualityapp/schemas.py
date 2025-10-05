@@ -22,3 +22,20 @@ class AQIResponse(BaseModel):
     aqi_original: int
     aqi_personalizado: int
     nivel_alerta: str
+
+class LoginRequest(BaseModel):
+    email: str
+    senha: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    usuario: dict
+
+class UsuarioResponse(BaseModel):
+    id: int
+    nome: str
+    email: str
+    cidade: Optional[str]
+    estado: Optional[str]
+    data_nascimento: Optional[date]

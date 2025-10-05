@@ -1,23 +1,83 @@
 import random
+import os
+from datetime import datetime, timedelta
 
-# Função de hash simples (substituir por bcrypt na produção)
-def hash_senha(senha: str):
+# ==============================
+# 🔐 Configurações de segurança
+# ==============================
+SECRET_KEY = os.getenv("SECRET_KEY", "chave_super_secreta_trocar_em_producao")
+ALGORITHM = "HS256"
+
+# ==============================
+# ✉️ Envio de e-mail (delegado para mail_utils.py)
+# ==============================
+
+# ==============================
+# 🔑 Segurança e autenticação
+# ==============================
+from passlib.context import CryptContext
+
+# CryptContext para bcrypt (padrão moderno)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_senha_bcrypt(senha: str) -> str:
+    """Gera hash bcrypt (usa truncamento para 72 bytes)."""
+    return pwd_context.hash(senha[:72])
+
+# compatibilidade com o hash antigo "HASH_<senha>"
+def hash_senha_legacy(senha: str) -> str:
     return "HASH_" + senha
 
-# Simulação de dados TEMPO + sensores locais
+def hash_senha(senha: str) -> str:
+    """
+    Função pública para criar hash de senha.
+    -> Usa bcrypt para novas senhas (recomendado).
+    """
+    return hash_senha_bcrypt(senha)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verifica senha com suporte a:
+      - formatos bcrypt (recomendado)
+      - formato legado "HASH_<senha>" (compatibilidade)
+    """
+    if hashed_password is None:
+        return False
+
+    # Legado: se armazenou como "HASH_<senha>"
+    if isinstance(hashed_password, str) and hashed_password.startswith("HASH_"):
+        return hashed_password == hash_senha_legacy(plain_password)
+
+    # Caso normal: bcrypt (ou outros suportados pelo pwd_context)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        # se o formato do hash for desconhecido, retorna False
+        return False
+
+# Funções JWT removidas - usando tokens seguros no CRUD
+
+# ==============================
+# 🌦️ Simulações de dados locais
+# ==============================
 def obter_dados_tempo(lat, lon):
     # Substitua por API NASA TEMPO
     return {"pm2_5": random.randint(10, 200)}
 
 def obter_dados_meteorologia(lat, lon):
     # Substitua por API real
-    return {"vento": random.uniform(0, 10), "umidade": random.uniform(20, 90), "temperatura": random.uniform(15, 35)}
+    return {
+        "vento": random.uniform(0, 10),
+        "umidade": random.uniform(20, 90),
+        "temperatura": random.uniform(15, 35)
+    }
 
-# Calcula AQI personalizado com base no perfil de saúde
+# ==============================
+# 📊 Cálculos de qualidade do ar
+# ==============================
 def calcular_indice_personalizado(aqi_original, perfil):
     ajuste = 0
 
-    # Suporta tanto objetos ORM quanto dicionários
     def get_attr(obj, key):
         if isinstance(obj, dict):
             return obj.get(key, False)
@@ -38,9 +98,9 @@ def calcular_indice_personalizado(aqi_original, perfil):
         nivel_alerta = "laranja"
     else:
         nivel_alerta = "vermelho"
+
     return aqi_personalizado, nivel_alerta
 
-# Ajuste meteorológico
 def ajustar_aqi_com_meteorologia(aqi, vento, umidade, temperatura):
     if vento > 5: aqi -= 5
     if umidade > 70: aqi += 5
