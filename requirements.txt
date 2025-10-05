@@ -22,7 +22,6 @@ mysql-connector-python==9.4.0
 numpy==2.3.3
 pandas==2.3.3
 passlib==1.7.4
-psycopg2==2.9.10
 psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pydantic==2.11.10
