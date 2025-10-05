@@ -63,6 +63,14 @@ def autenticar_usuario(db: Session, email: str, senha: str):
 # -----------------------------
 
 def criar_usuario(db: Session, usuario):
+    # Verificar se o email já existe
+    usuario_existente = db.query(Usuario).filter(Usuario.email == usuario.email).first()
+    if usuario_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email já cadastrado"
+        )
+
     db_usuario = Usuario(
         nome=usuario.nome,
         email=usuario.email,
