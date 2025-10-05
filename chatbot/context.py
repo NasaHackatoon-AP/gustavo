@@ -14,3 +14,6 @@ class ConversaContexto:
 
     def obter_local(self):
         return self.local_atual
+
+    def obter_historico(self):
+        return self.historico
