@@ -16,7 +16,6 @@ from pydantic import BaseModel
 from chatbot.bot import responder, contexto
 import random
 import json
-from chatbot.context import ConversaContexto
 
 load_dotenv()
 
@@ -50,9 +49,6 @@ class Mensagem(BaseModel):
 # Carregar intents
 with open("chatbot/intents.json", "r", encoding="utf-8") as f:
     INTENTS = json.load(f)
-
-# Contexto global
-contexto = ConversaContexto()
 
 # Função para gerar df_ultimo_dia simulado por cidade
 def gerar_df_cidade(cidade: str):
