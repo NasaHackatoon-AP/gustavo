@@ -123,8 +123,6 @@ REGRAS IMPORTANTES:
 - Se a pergunta NÃO for sobre qualidade do ar ou tópicos relacionados:
   * Informe educadamente que você é especializado em qualidade do ar
   * Sugira tópicos sobre os quais você pode ajudar
-  * Exemplo: "Sou especializado em qualidade do ar e monitoramento de AQI. Posso ajudar você com informações sobre a qualidade do ar na sua cidade, previsões de poluição, níveis de AQI e recomendações de saúde. Como posso ajudar?"
-- Seja sempre educado, útil e amigável
 """
 
 # Construir contexto completo para LLM
