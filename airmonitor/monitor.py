@@ -30,8 +30,7 @@ def obter_aqi_nasa_tempo_geo(lat: float, lon: float, raio_em_metros: int = 5000)
         params = {
             "coordinates": coordinates,
             "radius": int(raio_em_metros),
-            "limit": 100,
-            "order_by": "distance"
+            "limit": 100
         }
 
         logger.info(f"Buscando estações de qualidade do ar perto de ({lat}, {lon}) com raio {raio_em_metros}m...")
