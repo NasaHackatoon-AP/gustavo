@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+import requests
+import os
+import logging
+
 from airqualityapp.database import get_db
 from airqualityapp.crud import salvar_historico, obter_perfil_usuario
 from airqualityapp.utils import calcular_indice_personalizado
 from .monitor import obter_aqi_nasa_tempo_geo
 from .notifications import enviar_alerta_push
-import logging
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -13,72 +18,112 @@ logger = logging.getLogger(__name__)
 
 app = APIRouter()
 
-@app.get("/monitor/aqi")
+# Variável de API
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
+# --- Modelos Pydantic para resposta ---
+class Clima(BaseModel):
+    cidade: Optional[str]
+    temperatura: Optional[float]
+    umidade: Optional[int]
+    vento: Optional[float]
+    descricao: Optional[str]
+
+class AqiResponse(BaseModel):
+    latitude: float
+    longitude: float
+    aqi_original: float
+    aqi_personalizado: float
+    nivel_alerta: str
+    usuario_id: Optional[int]
+    clima: Optional[Clima]
+
+
+# --- Função para buscar dados da OpenWeather ---
+def obter_dados_openweather(lat: float, lon: float):
+    if not OPENWEATHER_API_KEY:
+        logger.error("Chave da OpenWeather não encontrada no ambiente")
+        return None
+
+    url = (
+        f"https://api.openweathermap.org/data/2.5/weather?"
+        f"lat={lat}&lon={lon}&units=metric&appid={OPENWEATHER_API_KEY}&lang=pt_br"
+    )
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+
+        return {
+            "cidade": data.get("name"),
+            "temperatura": data["main"]["temp"],
+            "umidade": data["main"]["humidity"],
+            "vento": data["wind"]["speed"],
+            "descricao": data["weather"][0]["description"]
+        }
+    except Exception as e:
+        logger.error(f"Erro ao buscar dados do OpenWeather: {e}")
+        return None
+
+
+# --- Função para processar AQI personalizado ---
+def processar_aqi_para_usuario(db: Session, usuario_id: int, aqi_original: float):
+    try:
+        perfil = obter_perfil_usuario(db, usuario_id)
+        if perfil:
+            perfil_dict = {
+                "possui_asma": perfil.possui_asma,
+                "possui_dpoc": perfil.possui_dpoc,
+                "possui_alergias": perfil.possui_alergias,
+                "fumante": perfil.fumante,
+                "sensibilidade_alta": perfil.sensibilidade_alta
+            }
+            aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil_dict)
+
+            try:
+                salvar_historico(db, usuario_id, aqi_original, aqi_personalizado, nivel_alerta)
+            except Exception as e:
+                logger.error(f"Erro ao salvar histórico: {e}")
+
+            return aqi_personalizado, nivel_alerta
+        else:
+            logger.warning(f"Perfil não encontrado para usuário {usuario_id}")
+            return aqi_original, "verde"
+    except Exception as e:
+        logger.error(f"Erro ao processar perfil do usuário: {e}")
+        return aqi_original, "verde"
+
+@app.get("/monitor/aqi", response_model=AqiResponse)
 def monitor_aqi_live(
     lat: float = Query(..., description="Latitude do usuário"),
     lon: float = Query(..., description="Longitude do usuário"),
-    usuario_id: int = Query(None, description="ID do usuário"),
+    usuario_id: Optional[int] = Query(None, description="ID do usuário"),
     db: Session = Depends(get_db)
 ):
-    """
-    Retorna AQI em tempo real para coordenadas enviadas pelo usuário.
-    """
     try:
         logger.info(f"Requisição AQI recebida: lat={lat}, lon={lon}, usuario_id={usuario_id}")
 
-        # Obtem AQI da NASA TEMPO
+        # Obter AQI da NASA TEMPO
         aqi_original = obter_aqi_nasa_tempo_geo(lat, lon)
-
-        # Verificar se a API retornou um valor válido
         if aqi_original is None:
-            logger.error("API OpenAQ/NASA não retornou dados válidos")
-            raise HTTPException(
-                status_code=503,
-                detail="Serviço de qualidade do ar temporariamente indisponível. Tente novamente mais tarde."
-            )
+            logger.error("API NASA TEMPO não retornou dados válidos")
+            raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível")
 
-        # Calcula AQI personalizado se houver perfil
-        aqi_personalizado = aqi_original
-        nivel_alerta = "verde"
+        # Processar AQI personalizado
+        aqi_personalizado, nivel_alerta = (
+            processar_aqi_para_usuario(db, usuario_id, aqi_original)
+            if usuario_id else (aqi_original, "verde")
+        )
 
-        if usuario_id:
-            try:
-                perfil = obter_perfil_usuario(db, usuario_id)
-                if perfil:
-                    logger.info(f"Perfil do usuário {usuario_id} encontrado")
-
-                    perfil_dict = {
-                        "possui_asma": perfil.possui_asma,
-                        "possui_dpoc": perfil.possui_dpoc,
-                        "possui_alergias": perfil.possui_alergias,
-                        "fumante": perfil.fumante,
-                        "sensibilidade_alta": perfil.sensibilidade_alta
-                    }
-
-                    aqi_personalizado, nivel_alerta = calcular_indice_personalizado(aqi_original, perfil_dict)
-                    logger.info(f"AQI personalizado calculado: {aqi_personalizado} (nível: {nivel_alerta})")
-
-                    # Salvar histórico
-                    try:
-                        salvar_historico(db, usuario_id, aqi_original, aqi_personalizado, nivel_alerta)
-                    except Exception as e:
-                        logger.error(f"Erro ao salvar histórico: {e}")
-                        # Não interrompe a execução se falhar ao salvar histórico
-
-                else:
-                    logger.warning(f"Perfil não encontrado para usuário {usuario_id}")
-
-            except Exception as e:
-                logger.error(f"Erro ao processar perfil do usuário: {e}")
-                # Continua com AQI não personalizado se houver erro ao buscar perfil
-
-        # Envia alerta push se AQI estiver alto
+        # Enviar alerta push se AQI alto
         if aqi_personalizado > 100 and usuario_id:
             try:
                 enviar_alerta_push(usuario_id, f"AQI alto ({aqi_personalizado}) na sua localização!")
             except Exception as e:
                 logger.error(f"Erro ao enviar alerta push: {e}")
-                # Não interrompe a execução se falhar ao enviar alerta
+
+        # Obter dados meteorológicos da OpenWeather
+        clima = obter_dados_openweather(lat, lon)
 
         logger.info(f"Resposta enviada com sucesso: AQI original={aqi_original}, AQI personalizado={aqi_personalizado}")
 
@@ -88,16 +133,12 @@ def monitor_aqi_live(
             "aqi_original": aqi_original,
             "aqi_personalizado": aqi_personalizado,
             "nivel_alerta": nivel_alerta,
-            "usuario_id": usuario_id
+            "usuario_id": usuario_id,
+            "clima": clima
         }
 
     except HTTPException:
-        # Re-raise HTTPException para manter o status code correto
         raise
-
     except Exception as e:
         logger.error(f"Erro inesperado no endpoint /monitor/aqi: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Erro interno ao processar requisição de qualidade do ar"
-        )
+        raise HTTPException(status_code=500, detail="Erro interno ao processar requisição de qualidade do ar")
