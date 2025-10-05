@@ -14,7 +14,7 @@ from .notifications import enviar_alerta_push
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 # Variável de API
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "d7850b94e00a68bac75067fb77e0b177")
